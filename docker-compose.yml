@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  assistant:
+    build: .
+    container_name: personal-assistant
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./chroma_data:/app/chroma_data
+    command: python -m src.main
+
+  # Optional: Run MCP server separately
+  # mcp:
+  #   build: .
+  #   container_name: personal-assistant-mcp
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./chroma_data:/app/chroma_data
+  #   command: python run_mcp.py
+  #   ports:
+  #     - "3000:3000"
+
+

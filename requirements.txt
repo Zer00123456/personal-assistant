@@ -1,0 +1,25 @@
+# Discord bot
+discord.py==2.3.2
+
+# Database
+chromadb==0.4.22
+
+# Web scraping
+aiohttp==3.9.1
+beautifulsoup4==4.12.2
+trafilatura==1.6.3
+
+# MCP Server
+mcp==1.0.0
+
+# Environment & Utils
+python-dotenv==1.0.0
+rapidfuzz==3.6.1
+
+# Async scheduling
+apscheduler==3.10.4
+
+# HTTP requests
+httpx==0.26.0
+
+
