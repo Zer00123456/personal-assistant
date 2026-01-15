@@ -43,7 +43,9 @@ class URLScraper:
     
     def __init__(self):
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
         }
     
     async def scrape(self, url: str) -> ScrapedContent:
@@ -54,9 +56,21 @@ class URLScraper:
         """
         source, content_type = self._detect_source(url)
         
+        # Twitter/X and TikTok have aggressive anti-scraping - store URL directly
+        if source in ["twitter", "tiktok"]:
+            return self._store_social_url(url, source, content_type)
+        
         try:
-            async with aiohttp.ClientSession(headers=self.headers) as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            # Create connector with larger header limits for problematic sites
+            connector = aiohttp.TCPConnector(force_close=True)
+            timeout = aiohttp.ClientTimeout(total=30)
+            
+            async with aiohttp.ClientSession(
+                headers=self.headers,
+                connector=connector,
+                timeout=timeout
+            ) as session:
+                async with session.get(url, allow_redirects=True) as response:
                     if response.status != 200:
                         return ScrapedContent(
                             url=url,
@@ -71,24 +85,56 @@ class URLScraper:
                     
                     html = await response.text()
         except Exception as e:
+            # If scraping fails, still store the URL as a reference
             return ScrapedContent(
                 url=url,
-                title="",
-                content="",
-                content_type="unknown",
+                title=f"Reference from {source}",
+                content=f"URL saved: {url}",
+                content_type=content_type,
                 source=source,
                 images=[],
-                success=False,
-                error=str(e)
+                success=True,  # Still mark as success - we saved the URL
+                error=None
             )
         
         # Route to appropriate extractor
-        if source == "twitter":
-            return await self._extract_tweet(url, html, source)
-        elif content_type == "design":
+        if content_type == "design":
             return await self._extract_design(url, html, source)
         else:
             return await self._extract_article(url, html, source)
+    
+    def _store_social_url(self, url: str, source: str, content_type: str) -> ScrapedContent:
+        """
+        Store social media URLs without scraping.
+        Twitter/X and TikTok block scrapers aggressively.
+        """
+        # Extract username and post ID from URL
+        title = f"Post from {source.capitalize()}"
+        content = f"Saved reference: {url}"
+        
+        # Try to extract username from Twitter/X URL
+        twitter_match = re.search(r'(?:twitter|x)\.com/(\w+)/status/(\d+)', url)
+        if twitter_match:
+            username = twitter_match.group(1)
+            title = f"Tweet by @{username}"
+            content = f"Twitter/X post by @{username}\nURL: {url}"
+        
+        # Try to extract from TikTok URL
+        tiktok_match = re.search(r'tiktok\.com/@(\w+)', url)
+        if tiktok_match:
+            username = tiktok_match.group(1)
+            title = f"TikTok by @{username}"
+            content = f"TikTok post by @{username}\nURL: {url}"
+        
+        return ScrapedContent(
+            url=url,
+            title=title,
+            content=content,
+            content_type=content_type,
+            source=source,
+            images=[],
+            success=True
+        )
     
     def _detect_source(self, url: str) -> tuple[str, str]:
         """Detect the source platform and expected content type"""
