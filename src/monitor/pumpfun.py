@@ -329,37 +329,36 @@ class PumpFunMonitor:
                         if data and len(data) > 0:
                             token = data[0]
                             
+                            # Make sure token is a dict, not a string/error
+                            if not isinstance(token, dict):
+                                return None
+                            
                             # Handle different response structures
                             name = ""
                             symbol = ""
                             image = ""
                             
                             # Try onChainMetadata first
-                            on_chain = token.get("onChainMetadata") or {}
-                            if on_chain:
-                                meta = on_chain.get("metadata") or {}
-                                name = meta.get("name", "")
-                                symbol = meta.get("symbol", "")
+                            on_chain = token.get("onChainMetadata")
+                            if isinstance(on_chain, dict):
+                                meta = on_chain.get("metadata")
+                                if isinstance(meta, dict):
+                                    name = meta.get("name", "") or ""
+                                    symbol = meta.get("symbol", "") or ""
                             
                             # Try legacyMetadata as fallback
                             if not name:
-                                legacy = token.get("legacyMetadata") or {}
-                                name = legacy.get("name", "")
-                                symbol = legacy.get("symbol", "") or symbol
+                                legacy = token.get("legacyMetadata")
+                                if isinstance(legacy, dict):
+                                    name = legacy.get("name", "") or ""
+                                    symbol = legacy.get("symbol", "") or symbol
                             
                             # Try offChainMetadata for image
-                            off_chain = token.get("offChainMetadata") or {}
-                            if off_chain:
-                                off_meta = off_chain.get("metadata") or {}
-                                image = off_meta.get("image", "")
-                            
-                            # Also check account.data for basic info
-                            if not name:
-                                account = token.get("account") or {}
-                                account_data = account.get("data") or {}
-                                parsed = account_data.get("parsed") or {}
-                                info = parsed.get("info") or {}
-                                # Sometimes name is in different places
+                            off_chain = token.get("offChainMetadata")
+                            if isinstance(off_chain, dict):
+                                off_meta = off_chain.get("metadata")
+                                if isinstance(off_meta, dict):
+                                    image = off_meta.get("image", "") or ""
                             
                             if name:
                                 return {
@@ -367,8 +366,6 @@ class PumpFunMonitor:
                                     "symbol": symbol,
                                     "image": image
                                 }
-                    else:
-                        pass  # Silently skip failed lookups
             except Exception as e:
                 print(f"⚠️ Failed to get token metadata: {e}")
         
