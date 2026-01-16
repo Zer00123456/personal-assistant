@@ -120,8 +120,8 @@ class URLScraper:
     
     async def _scrape_twitter_via_rapidapi(self, url: str) -> ScrapedContent:
         """
-        Scrape Twitter/X content via Twttr API on RapidAPI.
-        Much cheaper than official Twitter API.
+        Scrape Twitter/X content via The Old Bird API on RapidAPI.
+        Free tier: 100 requests/day.
         """
         # Extract tweet ID from URL
         twitter_match = re.search(r'(?:twitter|x)\.com/(\w+)/status/(\d+)', url)
@@ -134,52 +134,56 @@ class URLScraper:
         try:
             headers = {
                 "X-RapidAPI-Key": config.RAPIDAPI_KEY,
-                "X-RapidAPI-Host": "twttr.p.rapidapi.com"
+                "X-RapidAPI-Host": "the-old-bird.p.rapidapi.com"
             }
             
-            # Twttr API endpoint for getting tweet details
-            api_url = f"https://twttr.p.rapidapi.com/get-tweet?id={tweet_id}"
+            # The Old Bird API - Tweet Details endpoint
+            api_url = f"https://the-old-bird.p.rapidapi.com/tweet/details?id={tweet_id}"
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     api_url,
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=15)
+                    timeout=aiohttp.ClientTimeout(total=20)
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
                         
-                        # Extract tweet data from response
-                        # Twttr API structure varies, handle common formats
                         tweet_text = ""
                         author_name = username
                         
-                        if "data" in data:
-                            tweet_data = data["data"]
-                            tweet_text = tweet_data.get("text", "")
+                        # The Old Bird response format
+                        # Try different common response structures
+                        if isinstance(data, dict):
+                            # Direct text field
+                            tweet_text = data.get("full_text") or data.get("text") or ""
                             
-                            # Get author info if available
-                            if "user" in tweet_data:
-                                user = tweet_data["user"]
-                                author_name = f"{user.get('name', username)} (@{user.get('screen_name', username)})"
-                            elif "author" in tweet_data:
-                                author = tweet_data["author"]
-                                author_name = f"{author.get('name', username)} (@{author.get('username', username)})"
-                        
-                        elif "tweet" in data:
-                            tweet_data = data["tweet"]
-                            tweet_text = tweet_data.get("full_text", tweet_data.get("text", ""))
-                            if "user" in tweet_data:
-                                user = tweet_data["user"]
-                                author_name = f"{user.get('name', username)} (@{user.get('screen_name', username)})"
-                        
-                        elif "full_text" in data:
-                            tweet_text = data["full_text"]
-                        
-                        elif "text" in data:
-                            tweet_text = data["text"]
+                            # Check nested structures
+                            if not tweet_text and "data" in data:
+                                tweet_data = data["data"]
+                                if isinstance(tweet_data, dict):
+                                    tweet_text = tweet_data.get("full_text") or tweet_data.get("text") or ""
+                            
+                            if not tweet_text and "tweet" in data:
+                                tweet_data = data["tweet"]
+                                if isinstance(tweet_data, dict):
+                                    tweet_text = tweet_data.get("full_text") or tweet_data.get("text") or ""
+                            
+                            if not tweet_text and "result" in data:
+                                result = data["result"]
+                                if isinstance(result, dict):
+                                    legacy = result.get("legacy", {})
+                                    tweet_text = legacy.get("full_text") or result.get("text") or ""
+                            
+                            # Get user info
+                            user = data.get("user") or data.get("author") or {}
+                            if isinstance(user, dict):
+                                name = user.get("name") or user.get("screen_name") or username
+                                screen_name = user.get("screen_name") or user.get("username") or username
+                                author_name = f"{name} (@{screen_name})"
                         
                         if tweet_text:
+                            print(f"Successfully scraped tweet: {tweet_text[:50]}...")
                             return ScrapedContent(
                                 url=url,
                                 title=f"Tweet by {author_name}",
@@ -189,12 +193,15 @@ class URLScraper:
                                 images=[],
                                 success=True
                             )
+                        else:
+                            # Log the response for debugging
+                            print(f"Tweet response structure: {str(data)[:500]}")
                     
                     elif response.status == 429:
                         print("RapidAPI rate limited")
                     else:
                         error_text = await response.text()
-                        print(f"RapidAPI error {response.status}: {error_text[:200]}")
+                        print(f"The Old Bird API error {response.status}: {error_text[:300]}")
         
         except Exception as e:
             print(f"RapidAPI exception: {e}")
