@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import config
 from src.bot import DiscordBot
-from src.monitor import PumpFunMonitor
+from src.monitor import PumpFunMonitor, TwitterWatchMonitor
 from src.alerts import DiscordAlerts
 from src.database import TrendsDB
 
@@ -39,6 +39,7 @@ async def main():
     # Initialize components
     bot = DiscordBot()
     monitor = PumpFunMonitor()
+    twitter_watch = TwitterWatchMonitor()
     alerts = DiscordAlerts()
     
     # Wire up callbacks
@@ -59,6 +60,7 @@ async def main():
     print("\n📡 Starting services...")
     print(f"   • Discord Bot")
     print(f"   • Pump.fun Monitor (60s interval)")
+    print(f"   • Twitter Dev Watch (2hr interval)")
     print(f"   • Alert System")
     print("\n")
     
@@ -66,10 +68,12 @@ async def main():
         await asyncio.gather(
             bot.start(config.DISCORD_BOT_TOKEN),
             monitor.start(check_interval=60),
+            twitter_watch.start(check_interval=7200),  # Check every 2 hours
         )
     except KeyboardInterrupt:
         print("\n🛑 Shutting down...")
         monitor.stop()
+        twitter_watch.stop()
         await bot.close()
 
 
