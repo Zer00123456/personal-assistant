@@ -27,6 +27,9 @@ class Config:
     # Twitter API for scraping tweets
     TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
     
+    # RapidAPI for Twitter scraping (cheaper alternative)
+    RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+    
     # Database paths
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
     

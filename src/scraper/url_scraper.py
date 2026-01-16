@@ -62,9 +62,11 @@ class URLScraper:
         """
         source, content_type = self._detect_source(url)
         
-        # Twitter/X - use official API if available, fallback to Nitter
+        # Twitter/X - try RapidAPI first, then official API, then Nitter
         if source == "twitter":
-            if config.TWITTER_BEARER_TOKEN:
+            if config.RAPIDAPI_KEY:
+                return await self._scrape_twitter_via_rapidapi(url)
+            elif config.TWITTER_BEARER_TOKEN:
                 return await self._scrape_twitter_via_api(url)
             else:
                 return await self._scrape_twitter_via_nitter(url)
@@ -115,6 +117,92 @@ class URLScraper:
             return await self._extract_design(url, html, source)
         else:
             return await self._extract_article(url, html, source)
+    
+    async def _scrape_twitter_via_rapidapi(self, url: str) -> ScrapedContent:
+        """
+        Scrape Twitter/X content via Twttr API on RapidAPI.
+        Much cheaper than official Twitter API.
+        """
+        # Extract tweet ID from URL
+        twitter_match = re.search(r'(?:twitter|x)\.com/(\w+)/status/(\d+)', url)
+        if not twitter_match:
+            return self._store_social_url_fallback(url, "twitter", "tweet")
+        
+        username = twitter_match.group(1)
+        tweet_id = twitter_match.group(2)
+        
+        try:
+            headers = {
+                "X-RapidAPI-Key": config.RAPIDAPI_KEY,
+                "X-RapidAPI-Host": "twttr.p.rapidapi.com"
+            }
+            
+            # Twttr API endpoint for getting tweet details
+            api_url = f"https://twttr.p.rapidapi.com/get-tweet?id={tweet_id}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    api_url,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=15)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        
+                        # Extract tweet data from response
+                        # Twttr API structure varies, handle common formats
+                        tweet_text = ""
+                        author_name = username
+                        
+                        if "data" in data:
+                            tweet_data = data["data"]
+                            tweet_text = tweet_data.get("text", "")
+                            
+                            # Get author info if available
+                            if "user" in tweet_data:
+                                user = tweet_data["user"]
+                                author_name = f"{user.get('name', username)} (@{user.get('screen_name', username)})"
+                            elif "author" in tweet_data:
+                                author = tweet_data["author"]
+                                author_name = f"{author.get('name', username)} (@{author.get('username', username)})"
+                        
+                        elif "tweet" in data:
+                            tweet_data = data["tweet"]
+                            tweet_text = tweet_data.get("full_text", tweet_data.get("text", ""))
+                            if "user" in tweet_data:
+                                user = tweet_data["user"]
+                                author_name = f"{user.get('name', username)} (@{user.get('screen_name', username)})"
+                        
+                        elif "full_text" in data:
+                            tweet_text = data["full_text"]
+                        
+                        elif "text" in data:
+                            tweet_text = data["text"]
+                        
+                        if tweet_text:
+                            return ScrapedContent(
+                                url=url,
+                                title=f"Tweet by {author_name}",
+                                content=tweet_text,
+                                content_type="tweet",
+                                source="twitter",
+                                images=[],
+                                success=True
+                            )
+                    
+                    elif response.status == 429:
+                        print("RapidAPI rate limited")
+                    else:
+                        error_text = await response.text()
+                        print(f"RapidAPI error {response.status}: {error_text[:200]}")
+        
+        except Exception as e:
+            print(f"RapidAPI exception: {e}")
+        
+        # Fallback to official API or Nitter
+        if config.TWITTER_BEARER_TOKEN:
+            return await self._scrape_twitter_via_api(url)
+        return await self._scrape_twitter_via_nitter(url)
     
     async def _scrape_twitter_via_api(self, url: str) -> ScrapedContent:
         """
