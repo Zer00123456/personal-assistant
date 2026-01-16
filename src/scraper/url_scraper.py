@@ -120,8 +120,8 @@ class URLScraper:
     
     async def _scrape_twitter_via_rapidapi(self, url: str) -> ScrapedContent:
         """
-        Scrape Twitter/X content via The Old Bird API on RapidAPI.
-        Free tier: 100 requests/day.
+        Scrape Twitter/X content via SocialData API.
+        https://socialdata.tools - reliable Twitter data API.
         """
         # Extract tweet ID from URL
         twitter_match = re.search(r'(?:twitter|x)\.com/(\w+)/status/(\d+)', url)
@@ -133,12 +133,14 @@ class URLScraper:
         
         try:
             headers = {
-                "X-RapidAPI-Key": config.RAPIDAPI_KEY,
-                "X-RapidAPI-Host": "the-old-bird.p.rapidapi.com"
+                "Authorization": f"Bearer {config.RAPIDAPI_KEY}",
+                "Accept": "application/json"
             }
             
-            # The Old Bird API - Tweet Details endpoint
-            api_url = f"https://the-old-bird.p.rapidapi.com/tweet/details?id={tweet_id}"
+            # SocialData API - Get Tweet endpoint
+            api_url = f"https://api.socialdata.tools/twitter/tweets/{tweet_id}"
+            
+            print(f"Fetching tweet {tweet_id} via SocialData API...")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -152,42 +154,32 @@ class URLScraper:
                         tweet_text = ""
                         author_name = username
                         
-                        # The Old Bird response format
-                        # Try different common response structures
+                        # SocialData response format
                         if isinstance(data, dict):
-                            # Direct text field
+                            # Primary text field
                             tweet_text = data.get("full_text") or data.get("text") or ""
                             
-                            # Check nested structures
-                            if not tweet_text and "data" in data:
-                                tweet_data = data["data"]
-                                if isinstance(tweet_data, dict):
-                                    tweet_text = tweet_data.get("full_text") or tweet_data.get("text") or ""
-                            
-                            if not tweet_text and "tweet" in data:
-                                tweet_data = data["tweet"]
-                                if isinstance(tweet_data, dict):
-                                    tweet_text = tweet_data.get("full_text") or tweet_data.get("text") or ""
-                            
-                            if not tweet_text and "result" in data:
-                                result = data["result"]
-                                if isinstance(result, dict):
-                                    legacy = result.get("legacy", {})
-                                    tweet_text = legacy.get("full_text") or result.get("text") or ""
-                            
                             # Get user info
-                            user = data.get("user") or data.get("author") or {}
+                            user = data.get("user") or {}
                             if isinstance(user, dict):
-                                name = user.get("name") or user.get("screen_name") or username
-                                screen_name = user.get("screen_name") or user.get("username") or username
+                                name = user.get("name") or username
+                                screen_name = user.get("screen_name") or username
                                 author_name = f"{name} (@{screen_name})"
+                            
+                            # Get engagement metrics
+                            metrics = ""
+                            likes = data.get("favorite_count", 0)
+                            retweets = data.get("retweet_count", 0)
+                            replies = data.get("reply_count", 0)
+                            if likes or retweets or replies:
+                                metrics = f"\n\nEngagement: {likes} likes, {retweets} RTs, {replies} replies"
                         
                         if tweet_text:
-                            print(f"Successfully scraped tweet: {tweet_text[:50]}...")
+                            print(f"✅ Successfully scraped tweet: {tweet_text[:50]}...")
                             return ScrapedContent(
                                 url=url,
                                 title=f"Tweet by {author_name}",
-                                content=tweet_text,
+                                content=f"{tweet_text}{metrics}",
                                 content_type="tweet",
                                 source="twitter",
                                 images=[],
@@ -197,14 +189,18 @@ class URLScraper:
                             # Log the response for debugging
                             print(f"Tweet response structure: {str(data)[:500]}")
                     
+                    elif response.status == 402:
+                        print("⚠️ SocialData API: Payment required / credits depleted")
+                    elif response.status == 404:
+                        print(f"⚠️ SocialData API: Tweet {tweet_id} not found")
                     elif response.status == 429:
-                        print("RapidAPI rate limited")
+                        print("⚠️ SocialData API: Rate limited")
                     else:
                         error_text = await response.text()
-                        print(f"The Old Bird API error {response.status}: {error_text[:300]}")
+                        print(f"SocialData API error {response.status}: {error_text[:300]}")
         
         except Exception as e:
-            print(f"RapidAPI exception: {e}")
+            print(f"SocialData API exception: {e}")
         
         # Fallback to official API or Nitter
         if config.TWITTER_BEARER_TOKEN:
