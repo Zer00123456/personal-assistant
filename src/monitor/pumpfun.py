@@ -328,11 +328,47 @@ class PumpFunMonitor:
                         data = await response.json()
                         if data and len(data) > 0:
                             token = data[0]
-                            return {
-                                "name": token.get("onChainMetadata", {}).get("metadata", {}).get("name", ""),
-                                "symbol": token.get("onChainMetadata", {}).get("metadata", {}).get("symbol", ""),
-                                "image": token.get("offChainMetadata", {}).get("metadata", {}).get("image", "")
-                            }
+                            
+                            # Handle different response structures
+                            name = ""
+                            symbol = ""
+                            image = ""
+                            
+                            # Try onChainMetadata first
+                            on_chain = token.get("onChainMetadata") or {}
+                            if on_chain:
+                                meta = on_chain.get("metadata") or {}
+                                name = meta.get("name", "")
+                                symbol = meta.get("symbol", "")
+                            
+                            # Try legacyMetadata as fallback
+                            if not name:
+                                legacy = token.get("legacyMetadata") or {}
+                                name = legacy.get("name", "")
+                                symbol = legacy.get("symbol", "") or symbol
+                            
+                            # Try offChainMetadata for image
+                            off_chain = token.get("offChainMetadata") or {}
+                            if off_chain:
+                                off_meta = off_chain.get("metadata") or {}
+                                image = off_meta.get("image", "")
+                            
+                            # Also check account.data for basic info
+                            if not name:
+                                account = token.get("account") or {}
+                                account_data = account.get("data") or {}
+                                parsed = account_data.get("parsed") or {}
+                                info = parsed.get("info") or {}
+                                # Sometimes name is in different places
+                            
+                            if name:
+                                return {
+                                    "name": name,
+                                    "symbol": symbol,
+                                    "image": image
+                                }
+                    else:
+                        pass  # Silently skip failed lookups
             except Exception as e:
                 print(f"⚠️ Failed to get token metadata: {e}")
         
