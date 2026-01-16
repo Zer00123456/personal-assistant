@@ -24,6 +24,9 @@ class Config:
     # Optional OpenAI for categorization
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     
+    # Twitter API for scraping tweets
+    TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
+    
     # Database paths
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
     

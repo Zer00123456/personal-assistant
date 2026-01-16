@@ -3,6 +3,7 @@ URL Scraper - Extracts content from URLs
 
 Handles articles, tweets, and general web pages.
 Uses trafilatura for clean article extraction.
+Uses Twitter API v2 for tweet scraping.
 """
 
 import re
@@ -11,6 +12,11 @@ from bs4 import BeautifulSoup
 import trafilatura
 from typing import Optional
 from dataclasses import dataclass
+
+from ..config import config
+
+# Twitter API v2 endpoint
+TWITTER_API_URL = "https://api.twitter.com/2/tweets"
 
 
 @dataclass
@@ -56,9 +62,12 @@ class URLScraper:
         """
         source, content_type = self._detect_source(url)
         
-        # Twitter/X - try Nitter scraping first
+        # Twitter/X - use official API if available, fallback to Nitter
         if source == "twitter":
-            return await self._scrape_twitter_via_nitter(url)
+            if config.TWITTER_BEARER_TOKEN:
+                return await self._scrape_twitter_via_api(url)
+            else:
+                return await self._scrape_twitter_via_nitter(url)
         
         # TikTok - just store URL (no good scraping option)
         if source == "tiktok":
@@ -106,6 +115,91 @@ class URLScraper:
             return await self._extract_design(url, html, source)
         else:
             return await self._extract_article(url, html, source)
+    
+    async def _scrape_twitter_via_api(self, url: str) -> ScrapedContent:
+        """
+        Scrape Twitter/X content via official Twitter API v2.
+        Requires TWITTER_BEARER_TOKEN in config.
+        """
+        # Extract tweet ID from URL
+        twitter_match = re.search(r'(?:twitter|x)\.com/(\w+)/status/(\d+)', url)
+        if not twitter_match:
+            return self._store_social_url_fallback(url, "twitter", "tweet")
+        
+        username = twitter_match.group(1)
+        tweet_id = twitter_match.group(2)
+        
+        try:
+            headers = {
+                "Authorization": f"Bearer {config.TWITTER_BEARER_TOKEN}",
+                "User-Agent": "v2TweetLookupPython"
+            }
+            
+            # Request tweet with expanded author info
+            params = {
+                "ids": tweet_id,
+                "tweet.fields": "text,author_id,created_at,public_metrics",
+                "expansions": "author_id",
+                "user.fields": "name,username"
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    TWITTER_API_URL,
+                    headers=headers,
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=15)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        
+                        if "data" in data and len(data["data"]) > 0:
+                            tweet = data["data"][0]
+                            tweet_text = tweet.get("text", "")
+                            
+                            # Get author info
+                            author_name = username
+                            if "includes" in data and "users" in data["includes"]:
+                                user = data["includes"]["users"][0]
+                                author_name = f"{user.get('name', username)} (@{user.get('username', username)})"
+                            
+                            # Get metrics if available
+                            metrics = tweet.get("public_metrics", {})
+                            metrics_str = ""
+                            if metrics:
+                                metrics_str = f"\n\nEngagement: {metrics.get('like_count', 0)} likes, {metrics.get('retweet_count', 0)} RTs, {metrics.get('reply_count', 0)} replies"
+                            
+                            return ScrapedContent(
+                                url=url,
+                                title=f"Tweet by {author_name}",
+                                content=f"{tweet_text}{metrics_str}",
+                                content_type="tweet",
+                                source="twitter",
+                                images=[],
+                                success=True
+                            )
+                    
+                    elif response.status == 429:
+                        # Rate limited - fallback to URL only
+                        return ScrapedContent(
+                            url=url,
+                            title=f"Tweet by @{username}",
+                            content=f"Twitter API rate limited. URL: {url}",
+                            content_type="tweet",
+                            source="twitter",
+                            images=[],
+                            success=True,
+                            error="Rate limited"
+                        )
+                    else:
+                        error_text = await response.text()
+                        print(f"Twitter API error {response.status}: {error_text[:200]}")
+        
+        except Exception as e:
+            print(f"Twitter API exception: {e}")
+        
+        # Fallback to Nitter if API fails
+        return await self._scrape_twitter_via_nitter(url)
     
     async def _scrape_twitter_via_nitter(self, url: str) -> ScrapedContent:
         """
