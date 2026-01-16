@@ -30,6 +30,9 @@ class Config:
     # RapidAPI for Twitter scraping (cheaper alternative)
     RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
     
+    # Helius API for Solana/pump.fun monitoring
+    HELIUS_API_KEY = os.getenv("HELIUS_API_KEY")
+    
     # Database paths
     CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
     
