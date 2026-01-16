@@ -290,3 +290,4 @@ class CoinPerformanceDB:
             if query_lower in c["name"].lower() or query_lower in c.get("notes", "").lower()
         ]
 
+

@@ -56,9 +56,13 @@ class URLScraper:
         """
         source, content_type = self._detect_source(url)
         
-        # Twitter/X and TikTok have aggressive anti-scraping - store URL directly
-        if source in ["twitter", "tiktok"]:
-            return self._store_social_url(url, source, content_type)
+        # Twitter/X - try Nitter scraping first
+        if source == "twitter":
+            return await self._scrape_twitter_via_nitter(url)
+        
+        # TikTok - just store URL (no good scraping option)
+        if source == "tiktok":
+            return self._store_social_url_fallback(url, source, content_type)
         
         try:
             # Create connector with larger header limits for problematic sites
@@ -103,12 +107,84 @@ class URLScraper:
         else:
             return await self._extract_article(url, html, source)
     
-    def _store_social_url(self, url: str, source: str, content_type: str) -> ScrapedContent:
+    async def _scrape_twitter_via_nitter(self, url: str) -> ScrapedContent:
         """
-        Store social media URLs without scraping.
-        Twitter/X and TikTok block scrapers aggressively.
+        Scrape Twitter/X content via Nitter instances.
+        Nitter is an open-source Twitter frontend that's easier to scrape.
         """
-        # Extract username and post ID from URL
+        # Extract tweet ID and username
+        twitter_match = re.search(r'(?:twitter|x)\.com/(\w+)/status/(\d+)', url)
+        if not twitter_match:
+            return self._store_social_url_fallback(url, "twitter", "tweet")
+        
+        username = twitter_match.group(1)
+        tweet_id = twitter_match.group(2)
+        
+        # List of Nitter instances to try
+        nitter_instances = [
+            "nitter.privacydev.net",
+            "nitter.poast.org", 
+            "nitter.woodland.cafe",
+            "nitter.1d4.us",
+        ]
+        
+        for instance in nitter_instances:
+            nitter_url = f"https://{instance}/{username}/status/{tweet_id}"
+            
+            try:
+                connector = aiohttp.TCPConnector(force_close=True)
+                timeout = aiohttp.ClientTimeout(total=15)
+                
+                async with aiohttp.ClientSession(
+                    headers=self.headers,
+                    connector=connector,
+                    timeout=timeout
+                ) as session:
+                    async with session.get(nitter_url, allow_redirects=True) as response:
+                        if response.status != 200:
+                            continue
+                        
+                        html = await response.text()
+                        soup = BeautifulSoup(html, "html.parser")
+                        
+                        # Extract tweet content
+                        tweet_content = ""
+                        content_div = soup.find("div", class_="tweet-content")
+                        if content_div:
+                            tweet_content = content_div.get_text(strip=True)
+                        
+                        # Extract username/display name
+                        fullname = soup.find("a", class_="fullname")
+                        display_name = fullname.get_text(strip=True) if fullname else username
+                        
+                        # Extract images if any
+                        images = []
+                        for img in soup.find_all("img", class_="still-image"):
+                            src = img.get("src", "")
+                            if src:
+                                images.append(f"https://{instance}{src}" if src.startswith("/") else src)
+                        
+                        if tweet_content:
+                            return ScrapedContent(
+                                url=url,
+                                title=f"Tweet by @{username} ({display_name})",
+                                content=tweet_content,
+                                content_type="tweet",
+                                source="twitter",
+                                images=images,
+                                success=True
+                            )
+            except Exception:
+                continue
+        
+        # Fallback if all Nitter instances fail
+        return self._store_social_url_fallback(url, "twitter", "tweet")
+    
+    def _store_social_url_fallback(self, url: str, source: str, content_type: str) -> ScrapedContent:
+        """
+        Fallback: Store social media URLs without full scraping.
+        Used when Nitter scraping fails.
+        """
         title = f"Post from {source.capitalize()}"
         content = f"Saved reference: {url}"
         

@@ -251,13 +251,15 @@ class DiscordBot(commands.Bot):
         Handle messages in the coin data channel for meta analysis.
         
         Expected formats:
-        - Simple: COINNAME | narrative | peak | time | notes
+        - Simple: COINNAME | narrative | peak | time | notes/URL
         - Detailed:
             $COINNAME
             meta: ai_agents
             peak: 500M
             time: 3 days
-            notes: context here
+            notes: context here OR https://x.com/...
+        
+        If a URL is included, it will be scraped for context.
         """
         content = message.content.strip()
         
@@ -271,13 +273,33 @@ class DiscordBot(commands.Bot):
             await message.add_reaction("❓")
             await message.reply(
                 "**Format help:**\n"
-                "`COINNAME | narrative | peak_mcap | time_to_peak | notes`\n"
-                "Example: `FARTCOIN | ai_agents | 500M | 3 days | viral AI narrative`\n\n"
+                "`COINNAME | narrative | peak_mcap | time_to_peak | notes/URL`\n"
+                "Example: `FARTCOIN | ai_agents | 500M | 3 days | https://x.com/...`\n\n"
                 "Or detailed format:\n"
-                "```\n$COINNAME\nmeta: ai_agents\npeak: 500M\ntime: 3 days\nnotes: your notes```",
+                "```\n$COINNAME\nmeta: ai_agents\npeak: 500M\ntime: 3 days\nnotes: https://x.com/...```\n\n"
+                "**Twitter links will be scraped for full context!**",
                 mention_author=False
             )
             return
+        
+        # Check if notes contains a URL - if so, scrape it
+        notes = coin_data.get("notes", "")
+        url_match = re.search(r'https?://\S+', notes)
+        
+        if url_match:
+            url = url_match.group(0)
+            await message.add_reaction("⏳")
+            
+            # Scrape the URL for context
+            scraped = await self.scraper.scrape(url)
+            
+            if scraped.success and scraped.content:
+                # Combine URL with scraped content
+                coin_data["notes"] = f"Source: {url}\n\n{scraped.content}"
+                await message.remove_reaction("⏳", self.user)
+            else:
+                await message.remove_reaction("⏳", self.user)
+                # Keep original notes if scraping failed
         
         # Add to database
         try:
@@ -288,11 +310,17 @@ class DiscordBot(commands.Bot):
             # Get updated analysis for this narrative
             analysis = self.coin_db.get_narrative_summary(coin_data["narrative"])
             
+            # Show preview of scraped content if we got it
+            notes_preview = ""
+            if coin_data.get("notes") and len(coin_data["notes"]) > 50:
+                notes_preview = f"\n📝 Context: {coin_data['notes'][:150]}..."
+            
             response = (
                 f"📊 Recorded: **{coin['name']}**\n"
                 f"• Narrative: {coin['narrative'].replace('_', ' ').title()}\n"
                 f"• Peak: {coin['peak_mcap']}\n"
-                f"• Time to peak: {coin['time_to_peak']}\n\n"
+                f"• Time to peak: {coin['time_to_peak']}"
+                f"{notes_preview}\n\n"
                 f"{analysis}"
             )
             
