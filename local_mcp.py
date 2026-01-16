@@ -17,7 +17,7 @@ from mcp.types import Tool, TextContent
 
 # API base URL (through Cloudflare tunnel)
 # Update this URL if the tunnel restarts
-API_BASE = "https://website-kirk-favour-literally.trycloudflare.com"
+API_BASE = "https://api.zaeassistor123456778.org"
 
 def create_local_mcp() -> Server:
     """Create MCP server that proxies to VPS API"""
