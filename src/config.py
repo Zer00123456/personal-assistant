@@ -13,6 +13,7 @@ class Config:
     # Channel IDs for INPUT (bot reads from these)
     TRENDS_INPUT_CHANNEL_ID = int(os.getenv("TRENDS_INPUT_CHANNEL_ID", "1461355576431739125"))
     CREATIVE_INPUT_CHANNEL_ID = int(os.getenv("CREATIVE_INPUT_CHANNEL_ID", "1461355492369498204"))
+    COIN_DATA_CHANNEL_ID = int(os.getenv("COIN_DATA_CHANNEL_ID", "0"))  # Set this in .env
     
     # Webhooks for OUTPUT (bot sends to these)
     COIN_ALERTS_WEBHOOK = os.getenv(

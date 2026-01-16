@@ -10,7 +10,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 import json
 
-from ..database import ReferencesDB, TrendsDB
+from ..database import ReferencesDB, TrendsDB, CoinPerformanceDB
 
 
 def create_mcp_server() -> Server:
@@ -19,6 +19,7 @@ def create_mcp_server() -> Server:
     server = Server("personal-assistant")
     refs_db = ReferencesDB()
     trends_db = TrendsDB()
+    coin_db = CoinPerformanceDB()
     
     # ==================== TOOLS ====================
     
@@ -248,6 +249,78 @@ def create_mcp_server() -> Server:
                     },
                     "required": ["query"]
                 }
+            ),
+            
+            # Coin Performance Tools (Meta Analysis)
+            Tool(
+                name="add_coin_data",
+                description="Record a coin's performance for meta analysis",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Coin name/ticker"
+                        },
+                        "narrative": {
+                            "type": "string",
+                            "description": "Meta category: ai_agents, animal, celebrity, political, gaming, defi, meme_culture, tech, viral_moment, influencer, other"
+                        },
+                        "peak_mcap": {
+                            "type": "string",
+                            "description": "Peak market cap (e.g., '500M', '1.2B', '50K')"
+                        },
+                        "time_to_peak": {
+                            "type": "string",
+                            "description": "Time to reach peak (e.g., '3 days', '12 hours')"
+                        },
+                        "notes": {
+                            "type": "string",
+                            "description": "Additional context"
+                        }
+                    },
+                    "required": ["name", "narrative", "peak_mcap", "time_to_peak"]
+                }
+            ),
+            Tool(
+                name="get_meta_analysis",
+                description="Get meta analysis showing typical ceilings and hold times for narratives",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "narrative": {
+                            "type": "string",
+                            "description": "Specific narrative to analyze (optional, omit for all)"
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="list_coin_data",
+                description="List all recorded coin performance data",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "narrative": {
+                            "type": "string",
+                            "description": "Filter by narrative (optional)"
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="get_narrative_summary",
+                description="Get a readable summary of a narrative's performance patterns",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "narrative": {
+                            "type": "string",
+                            "description": "The narrative to summarize"
+                        }
+                    },
+                    "required": ["narrative"]
+                }
             )
         ]
     
@@ -333,6 +406,32 @@ def create_mcp_server() -> Server:
         elif name == "search_trends":
             trends = trends_db.search_trends(arguments["query"])
             result = {"count": len(trends), "trends": trends}
+        
+        # Coin Performance
+        elif name == "add_coin_data":
+            coin = coin_db.add_coin(
+                name=arguments["name"],
+                narrative=arguments["narrative"],
+                peak_mcap=arguments["peak_mcap"],
+                time_to_peak=arguments["time_to_peak"],
+                notes=arguments.get("notes")
+            )
+            result = {"success": True, "coin": coin}
+        
+        elif name == "get_meta_analysis":
+            if arguments.get("narrative"):
+                analysis = coin_db.get_meta_analysis(arguments["narrative"])
+            else:
+                analysis = coin_db.get_meta_analysis()
+            result = {"analysis": analysis}
+        
+        elif name == "list_coin_data":
+            coins = coin_db.get_all_coins(narrative=arguments.get("narrative"))
+            result = {"count": len(coins), "coins": coins}
+        
+        elif name == "get_narrative_summary":
+            summary = coin_db.get_narrative_summary(arguments["narrative"])
+            result = {"summary": summary}
         
         else:
             result = {"error": f"Unknown tool: {name}"}

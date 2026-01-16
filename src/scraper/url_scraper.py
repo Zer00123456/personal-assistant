@@ -264,31 +264,95 @@ class URLScraper:
             success=bool(images)
         )
     
-    def guess_category(self, content: ScrapedContent) -> str:
+    def guess_category(self, content: ScrapedContent, user_message: str = "") -> str:
         """
         Attempt to auto-categorize based on content and source.
+        Uses keyword detection to identify topic areas.
         
         Returns one of the standard categories.
         """
-        # Source-based categorization
-        if content.source in ["twitter", "x"]:
-            return "twitter"
+        # Combine all text for analysis
+        text = (content.title + " " + content.content + " " + user_message).lower()
+        
+        # Category keywords - ordered by priority (first match wins)
+        # More specific categories first, then broader ones
+        CATEGORY_KEYWORDS = {
+            # Topic-based categories (content focus)
+            "crypto": [
+                "crypto", "bitcoin", "ethereum", "solana", "trading", "defi", 
+                "blockchain", "web3", "token", "coin", "memecoin", "degen",
+                "onchain", "on-chain", "wallet", "swap", "liquidity", "market cap",
+                "bull", "bear", "pump", "dump", "airdrop", "yield"
+            ],
+            "marketing": [
+                "marketing", "growth", "acquisition", "conversion", "funnel",
+                "campaign", "audience", "viral", "engagement", "retention",
+                "ctr", "roi", "ads", "advertising", "promotion"
+            ],
+            "content_systems": [
+                "content system", "content strategy", "content creation", "workflow",
+                "repurpose", "distribution", "content machine", "content engine",
+                "editorial", "publishing", "content calendar"
+            ],
+            "copywriting": [
+                "copywriting", "copy", "headline", "hook", "persuasion", "cta",
+                "call to action", "sales page", "landing page copy", "email copy",
+                "storytelling", "narrative", "writing"
+            ],
+            "twitter": [
+                "twitter", "tweet", "thread", "x.com", "followers", "viral tweet"
+            ],
+            
+            # Design-focused categories
+            "landing_pages": [
+                "landing page", "homepage", "hero section", "above the fold",
+                "conversion page", "squeeze page", "sales page design"
+            ],
+            "design": [
+                "design", "ui", "ux", "interface", "layout", "visual", 
+                "aesthetic", "mockup", "wireframe", "figma", "sketch"
+            ],
+            "fonts": [
+                "font", "typography", "typeface", "lettering", "sans-serif",
+                "serif", "display font", "font pairing"
+            ],
+            "colors": [
+                "color", "colour", "palette", "gradient", "scheme", "hex",
+                "rgb", "hue", "saturation"
+            ],
+            "logos": [
+                "logo", "brand identity", "brandmark", "wordmark", "icon design"
+            ],
+            "thumbnails": [
+                "thumbnail", "cover image", "featured image", "youtube thumbnail"
+            ],
+            
+            # Broader categories
+            "ai": [
+                "ai", "artificial intelligence", "machine learning", "gpt", 
+                "claude", "llm", "prompt", "automation", "chatbot"
+            ],
+            "productivity": [
+                "productivity", "efficiency", "workflow", "system", "process",
+                "automation", "template", "framework"
+            ],
+            "business": [
+                "business", "startup", "entrepreneur", "founder", "revenue",
+                "profit", "scale", "growth"
+            ],
+        }
+        
+        # Check each category's keywords
+        for category, keywords in CATEGORY_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword in text:
+                    return category
+        
+        # Source-based fallback
         if content.source in ["dribbble", "behance", "figma"]:
             return "design"
         
-        # Content-based categorization
-        text = (content.title + " " + content.content).lower()
-        
-        if any(word in text for word in ["font", "typography", "typeface"]):
-            return "fonts"
-        if any(word in text for word in ["color", "colour", "palette"]):
-            return "colors"
-        if any(word in text for word in ["landing page", "homepage", "hero section"]):
-            return "landing_pages"
-        if any(word in text for word in ["logo", "brand", "branding"]):
-            return "logos"
-        if any(word in text for word in ["thumbnail", "cover image"]):
-            return "thumbnails"
+        # Content type fallback
         if content.content_type == "design":
             return "design"
         
