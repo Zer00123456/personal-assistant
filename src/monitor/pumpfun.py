@@ -80,51 +80,91 @@ class PumpFunMonitor:
     async def _check_graduates_helius(self):
         """Check for newly graduated coins using Helius API"""
         
-        # Helius API endpoint for getting recent token metadata
-        # We'll query for recent pump.fun tokens that have graduated
-        helius_url = f"https://api.helius.xyz/v0/token-metadata?api-key={config.HELIUS_API_KEY}"
-        
-        # Alternative: Use Helius to get recent transactions on pump.fun program
-        # and parse for graduation events
+        print("🔄 Checking for new pump.fun graduates via Helius...")
         
         async with aiohttp.ClientSession() as session:
             try:
-                # Get recently created tokens that might be pump.fun graduations
-                # Using DAS API to search for recent tokens
-                das_url = f"https://mainnet.helius-rpc.com/?api-key={config.HELIUS_API_KEY}"
+                # Use Helius enhanced transactions API to get recent pump.fun activity
+                url = f"https://api.helius.xyz/v0/addresses/{self.PUMPFUN_PROGRAM}/transactions?api-key={config.HELIUS_API_KEY}&limit=20"
                 
-                # Search for recent pump.fun tokens
-                payload = {
-                    "jsonrpc": "2.0",
-                    "id": "pump-monitor",
-                    "method": "searchAssets",
-                    "params": {
-                        "ownerAddress": None,
-                        "grouping": ["collection", self.PUMPFUN_PROGRAM],
-                        "page": 1,
-                        "limit": 50,
-                        "sortBy": {"sortBy": "created", "sortDirection": "desc"}
-                    }
-                }
-                
-                async with session.post(
-                    das_url,
-                    json=payload,
+                async with session.get(
+                    url,
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
+                    print(f"   Helius API response: {response.status}")
+                    
                     if response.status == 200:
-                        data = await response.json()
+                        transactions = await response.json()
+                        print(f"   Found {len(transactions)} recent transactions")
                         
-                        if "result" in data and "items" in data["result"]:
-                            await self._process_helius_tokens(data["result"]["items"])
+                        if transactions:
+                            await self._process_helius_transactions(transactions)
                     else:
-                        # Fall back to alternative method
-                        await self._check_graduates_helius_enhanced(session)
+                        text = await response.text()
+                        print(f"   ⚠️ Helius error: {text[:200]}")
                         
             except Exception as e:
                 print(f"⚠️ Helius API error: {e}")
-                # Try fallback
-                await self._check_graduates_fallback()
+    
+    async def _process_helius_transactions(self, transactions: list):
+        """Process transactions from Helius to find new tokens"""
+        
+        trends = self.trends_db.get_all_trends(active_only=True)
+        keyword_map = self.trends_db.get_keyword_to_trend_map()
+        
+        print(f"   Checking against {len(keyword_map)} tracked trends...")
+        
+        new_tokens_found = 0
+        
+        for tx in transactions:
+            # Look for token transfers in the transaction
+            token_transfers = tx.get("tokenTransfers", [])
+            
+            for transfer in token_transfers:
+                mint = transfer.get("mint", "")
+                
+                if not mint or mint in self.seen_coins:
+                    continue
+                
+                self.seen_coins.add(mint)
+                new_tokens_found += 1
+                
+                # Get token metadata
+                metadata = await self._get_token_metadata(mint)
+                
+                if metadata and metadata.get("name"):
+                    coin_name = metadata["name"]
+                    coin_symbol = metadata.get("symbol", "")
+                    
+                    print(f"   📦 New token: {coin_name} ({coin_symbol})")
+                    
+                    # Try to match
+                    match_result = await self._find_match(coin_name, coin_symbol, trends, keyword_map)
+                    
+                    if match_result:
+                        trend, matched_keyword, score = match_result
+                        
+                        self.trends_db.record_match(
+                            trend_id=trend["id"],
+                            coin_name=coin_name,
+                            coin_address=mint,
+                            matched_keyword=matched_keyword
+                        )
+                        
+                        print(f"   🎯 MATCH: '{coin_name}' matched trend '{trend['keyword']}' (score: {score})")
+                        
+                        coin = {
+                            "name": coin_name,
+                            "symbol": coin_symbol,
+                            "mint": mint,
+                            "image_uri": metadata.get("image", "")
+                        }
+                        
+                        if self.on_match:
+                            await self.on_match(coin, trend, matched_keyword, score)
+        
+        if new_tokens_found == 0:
+            print(f"   No new tokens in this batch")
     
     async def _check_graduates_helius_enhanced(self, session: aiohttp.ClientSession):
         """Alternative Helius method using enhanced transactions API"""
